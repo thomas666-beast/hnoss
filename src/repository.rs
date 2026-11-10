@@ -9,11 +9,20 @@
 //!   `USDT`.
 //!
 //! All other codes fall back to exponent 2.
+//!
+//! # Two ways to get the default table
+//!
+//! * [`Repository::shared`] — returns a `&'static Repository`, the
+//!   process-wide singleton. Cheap; use this for lookups.
+//! * [`Repository::default`] (via the `Default` trait) — returns an owned
+//!   `Repository` built from scratch. Useful when you need to own one (e.g.
+//!   to combine with a custom table).
 
 /// A lookup table of currency codes to exponents.
 ///
 /// The default repository is a fixed table with the entries listed in the
-/// module docs. Custom repositories can be built with [`Repository::from_pairs`].
+/// module docs. Custom repositories can be built with
+/// [`Repository::from_pairs`].
 #[derive(Debug, Clone)]
 pub struct Repository {
     entries: Vec<(&'static str, u8)>,
@@ -21,28 +30,31 @@ pub struct Repository {
 }
 
 impl Repository {
-    /// Returns the process-wide default repository.
-    pub fn default() -> &'static Repository {
+    /// Returns the process-wide default repository as a static reference.
+    ///
+    /// This is the cheap, allocation-free way to get the default table for
+    /// lookups. Use [`Repository::default`] (the `Default` trait impl) if
+    /// you need an owned `Repository`.
+    pub fn shared() -> &'static Repository {
         use std::sync::OnceLock;
         static INSTANCE: OnceLock<Repository> = OnceLock::new();
-        INSTANCE.get_or_init(|| Repository::from_pairs(&DEFAULT_TABLE, 2))
+        INSTANCE.get_or_init(|| Repository::from_pairs(DEFAULT_TABLE, 2))
     }
 
     /// Builds a custom repository from a list of `(code, exponent)` pairs.
     ///
-    /// Codes must be exactly 3 uppercase ASCII letters. Exponents are u8
-    /// values, so any non-negative integer up to 255 is accepted.
+    /// Codes must be exactly 3 to 8 uppercase ASCII letters. Exponents are
+    /// `u8` values, so any non-negative integer up to 255 is accepted.
     ///
     /// # Panics
     ///
-    /// Panics if any code is not 3 uppercase ASCII letters, or if any
-    /// exponent is not representable as `u8`. This is a programmer error,
-    /// not a runtime condition: the table is expected to be correct.
+    /// Panics if any code is not 3 to 8 uppercase ASCII letters. This is a
+    /// programmer error, not a runtime condition: the table is expected to
+    /// be correct.
     pub fn from_pairs(pairs: &[(&'static str, u8)], fallback: u8) -> Self {
         for (code, _) in pairs {
             assert!(
-                code.len() >= 3
-                    && code.len() <= 8
+                (3..=8).contains(&code.len())
                     && code.bytes().all(|b| b.is_ascii_uppercase()),
                 "invalid code {code:?} in currency table"
             );
@@ -83,6 +95,16 @@ impl Repository {
     /// Returns all known codes, sorted.
     pub fn all_codes(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.entries.iter().map(|(code, _)| *code)
+    }
+}
+
+impl Default for Repository {
+    /// Builds an owned `Repository` from the built-in table.
+    ///
+    /// For lookups only, prefer [`Repository::shared`] — it returns a
+    /// `&'static Repository` without copying the table.
+    fn default() -> Self {
+        Repository::from_pairs(DEFAULT_TABLE, 2)
     }
 }
 
@@ -301,15 +323,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_singleton_is_stable() {
-        let a = Repository::default();
-        let b = Repository::default();
+    fn shared_singleton_is_stable() {
+        let a = Repository::shared();
+        let b = Repository::shared();
         assert!(std::ptr::eq(a, b));
     }
 
     #[test]
+    fn default_trait_returns_owned_copy() {
+        let owned: Repository = Default::default();
+        assert_eq!(owned.exponent("USD"), 2);
+        assert_eq!(owned.exponent("ZZZ"), 2);
+        assert!(owned.knows("BTC"));
+    }
+
+    #[test]
     fn known_exponents() {
-        let r = Repository::default();
+        let r = Repository::shared();
         assert_eq!(r.exponent("USD"), 2);
         assert_eq!(r.exponent("JPY"), 0);
         assert_eq!(r.exponent("BHD"), 3);
@@ -321,7 +351,7 @@ mod tests {
 
     #[test]
     fn case_insensitive_lookup() {
-        let r = Repository::default();
+        let r = Repository::shared();
         assert_eq!(r.exponent("usd"), 2);
         assert_eq!(r.exponent("btc"), 8);
         assert!(r.knows("usdt"));
@@ -329,14 +359,14 @@ mod tests {
 
     #[test]
     fn unknown_falls_back() {
-        let r = Repository::default();
+        let r = Repository::shared();
         assert_eq!(r.exponent("ZZZ"), 2);
         assert!(!r.knows("ZZZ"));
     }
 
     #[test]
     fn all_codes_sorted() {
-        let r = Repository::default();
+        let r = Repository::shared();
         let codes: Vec<_> = r.all_codes().collect();
         let mut sorted = codes.clone();
         sorted.sort();

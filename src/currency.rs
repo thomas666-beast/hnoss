@@ -85,7 +85,7 @@ impl Currency {
     /// For unknown codes, returns the repository's fallback exponent (2 for
     /// the default repository).
     pub fn exponent(&self) -> u8 {
-        Repository::default().exponent(&self.code)
+        Repository::shared().exponent(&self.code)
     }
 
     /// Alias for [`Currency::exponent`].
