@@ -9,7 +9,7 @@ operation.
 
 ## Status
 
-`0.8.0` — feature-complete for the core value-object scope. Currency, money
+`0.8.1` — feature-complete for the core value-object scope. Currency, money
 construction, arithmetic, comparison, allocation, formatting, and parsing
 are all implemented and tested on stable Rust (1.70+).
 

@@ -17,6 +17,12 @@
 
 - No API changes. `0.8.0` remains the current published version.
 
+## [0.8.1] - 2026-11-10
+
+### Added
+
+Update README
+
 ## [0.8.0] - 2026-11-10
 
 ### Added
