@@ -297,6 +297,111 @@ impl Money {
         ))
     }
 
+    /// Splits `self` across N recipients according to the given ratios.
+    ///
+    /// Returns a `Vec<Money>` of length `ratios.len()`. The sum of the
+    /// returned values is exactly `self` — no minor units are lost or
+    /// created.
+    ///
+    /// Each share is `floor(|amount| * ratio_i / sum_of_ratios)`, and the
+    /// leftover minor units are handed out one at a time, starting at index
+    /// 0. The distribution is **mirror-symmetric**: for a negative amount,
+    /// the same indices that would receive an extra unit for the positive
+    /// amount instead pay an extra unit. Concretely:
+    ///
+    /// ```text
+    /// Money::from_code(-100, "USD").allocate(&[1, 1, 1])
+    /// ```
+    ///
+    /// is element-wise the negation of
+    ///
+    /// ```text
+    /// Money::from_code( 100, "USD").allocate(&[1, 1, 1])
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// * [`MoneyError::InvalidAllocation`] if `ratios` is empty.
+    /// * [`MoneyError::InvalidAllocation`] if all ratios are zero.
+    /// * [`MoneyError::Overflow`] if `sum_of_ratios` overflows `u128`, or if
+    ///   an intermediate `amount * ratio` would overflow `i128`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::Money;
+    ///
+    /// let hundred = Money::from_code(100_i128, "USD").unwrap();
+    /// let parts = hundred.allocate(&[1, 1, 1]).unwrap();
+    /// assert_eq!(parts.len(), 3);
+    /// assert_eq!(parts[0].as_string(), "34 USD");
+    /// assert_eq!(parts[1].as_string(), "33 USD");
+    /// assert_eq!(parts[2].as_string(), "33 USD");
+    ///
+    /// let total = parts
+    ///     .iter()
+    ///     .fold(Money::from_code(0_i128, "USD").unwrap(), |a, b| {
+    ///         a.add(b).unwrap()
+    ///     });
+    /// assert_eq!(total.as_string(), "100 USD");
+    /// ```
+    pub fn allocate(&self, ratios: &[u128]) -> Result<Vec<Money>, MoneyError> {
+        if ratios.is_empty() {
+            return Err(MoneyError::InvalidAllocation("no ratios provided".into()));
+        }
+
+        // Sum the ratios, rejecting overflow and all-zero.
+        let mut sum: u128 = 0;
+        for &r in ratios {
+            sum = sum.checked_add(r).ok_or(MoneyError::Overflow)?;
+        }
+        if sum == 0 {
+            return Err(MoneyError::InvalidAllocation("all ratios are zero".into()));
+        }
+
+        // Compute base shares on the absolute amount, then negate at the end
+        // if the original was negative. This makes the result mirror-symmetric.
+        let is_negative = self.amount < 0;
+        let abs_amount: u128 = self.amount.unsigned_abs();
+
+        let mut shares: Vec<i128> = Vec::with_capacity(ratios.len());
+        let mut allocated: i128 = 0;
+        for &r in ratios {
+            // numerator = abs_amount * r, must fit in i128 for the division
+            // to produce a quotient that fits in i128.
+            let numerator = abs_amount.checked_mul(r).ok_or(MoneyError::Overflow)?;
+            let q_u128 = numerator / sum; // sum > 0, floor division is exact
+            let q: i128 = i128::try_from(q_u128).map_err(|_| MoneyError::Overflow)?;
+            shares.push(q);
+            allocated = allocated.checked_add(q).ok_or(MoneyError::Overflow)?;
+        }
+
+        // Remainder: non-negative by construction (floor division of
+        // non-negative values). Hand out one unit at a time, starting at
+        // index 0.
+        let abs_total: i128 =
+            i128::try_from(abs_amount).map_err(|_| MoneyError::Overflow)?;
+        let mut rem = abs_total - allocated;
+        let n = shares.len();
+        let mut i = 0;
+        while rem > 0 {
+            shares[i] = shares[i].checked_add(1).ok_or(MoneyError::Overflow)?;
+            rem -= 1;
+            i = (i + 1) % n;
+        }
+
+        if is_negative {
+            for s in &mut shares {
+                *s = s.checked_neg().ok_or(MoneyError::Overflow)?;
+            }
+        }
+
+        Ok(shares
+            .into_iter()
+            .map(|a| Money::new(a, self.currency.clone()))
+            .collect())
+    }
+
     // --- internals ----------------------------------------------------------
 
     fn check_same_currency(&self, other: &Money) -> Result<(), MoneyError> {
@@ -551,5 +656,164 @@ mod tests {
             a.divide_with_remainder(0),
             Err(MoneyError::DivisionByZero)
         ));
+    }
+
+    // --- allocate -----------------------------------------------------------
+
+    #[test]
+    fn allocate_three_way() {
+        let a = Money::new(100, usd());
+        let parts = a.allocate(&[1, 1, 1]).unwrap();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].as_string(), "34 USD");
+        assert_eq!(parts[1].as_string(), "33 USD");
+        assert_eq!(parts[2].as_string(), "33 USD");
+    }
+
+    #[test]
+    fn allocate_by_percentages() {
+        let a = Money::new(100, usd());
+        let parts = a.allocate(&[70, 20, 10]).unwrap();
+        assert_eq!(parts[0].as_string(), "70 USD");
+        assert_eq!(parts[1].as_string(), "20 USD");
+        assert_eq!(parts[2].as_string(), "10 USD");
+    }
+
+    #[test]
+    fn allocate_two_way_even() {
+        let a = Money::new(100, usd());
+        let parts = a.allocate(&[1, 1]).unwrap();
+        assert_eq!(parts[0].as_string(), "50 USD");
+        assert_eq!(parts[1].as_string(), "50 USD");
+    }
+
+    #[test]
+    fn allocate_two_way_odd() {
+        let a = Money::new(101, usd());
+        let parts = a.allocate(&[1, 1]).unwrap();
+        assert_eq!(parts[0].as_string(), "51 USD");
+        assert_eq!(parts[1].as_string(), "50 USD");
+    }
+
+    #[test]
+    fn allocate_with_zero_ratios() {
+        let a = Money::new(100, usd());
+        let parts = a.allocate(&[0, 1]).unwrap();
+        assert_eq!(parts[0].as_string(), "0 USD");
+        assert_eq!(parts[1].as_string(), "100 USD");
+    }
+
+    #[test]
+    fn allocate_negative_amount() {
+        let a = Money::new(-100, usd());
+        let parts = a.allocate(&[1, 1, 1]).unwrap();
+        assert_eq!(parts[0].as_string(), "-34 USD");
+        assert_eq!(parts[1].as_string(), "-33 USD");
+        assert_eq!(parts[2].as_string(), "-33 USD");
+    }
+
+    #[test]
+    fn allocate_negative_odd() {
+        let a = Money::new(-101, usd());
+        let parts = a.allocate(&[1, 1, 1]).unwrap();
+        assert_eq!(parts[0].as_string(), "-34 USD");
+        assert_eq!(parts[1].as_string(), "-34 USD");
+        assert_eq!(parts[2].as_string(), "-33 USD");
+    }
+
+    #[test]
+    fn allocate_mirror_symmetric() {
+        // allocate(-x) == -allocate(x), element-wise.
+        for amount in [1_i128, 7, 100, 101, 999, 12345] {
+            for ratios in [
+                vec![1u128, 1],
+                vec![1, 1, 1],
+                vec![70, 20, 10],
+                vec![1, 2, 3, 4],
+            ] {
+                let pos = Money::new(amount, usd()).allocate(&ratios).unwrap();
+                let neg = Money::new(-amount, usd()).allocate(&ratios).unwrap();
+                for (p, n) in pos.iter().zip(neg.iter()) {
+                    assert_eq!(
+                        p.amount(),
+                        -n.amount(),
+                        "mirror failed for amount={amount} ratios={ratios:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn allocate_sum_equals_original() {
+        for amount in [-999_i128, -100, -1, 0, 1, 100, 999] {
+            for ratios in [vec![1u128], vec![1, 1], vec![1, 1, 1], vec![7, 11, 13, 17]] {
+                let m = Money::new(amount, usd());
+                let parts = m.allocate(&ratios).unwrap();
+                let sum = parts
+                    .iter()
+                    .fold(Money::new(0, usd()), |acc, p| acc.add(p).unwrap());
+                assert_eq!(
+                    sum.amount(),
+                    amount,
+                    "sum invariant failed for amount={amount} ratios={ratios:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn allocate_preserves_currency() {
+        let a = Money::new(100, eur());
+        let parts = a.allocate(&[1, 1]).unwrap();
+        assert_eq!(parts[0].currency().code(), "EUR");
+        assert_eq!(parts[1].currency().code(), "EUR");
+    }
+
+    #[test]
+    fn allocate_zero_amount() {
+        let a = Money::new(0, usd());
+        let parts = a.allocate(&[1, 1, 1]).unwrap();
+        assert_eq!(parts[0].as_string(), "0 USD");
+        assert_eq!(parts[1].as_string(), "0 USD");
+        assert_eq!(parts[2].as_string(), "0 USD");
+    }
+
+    // --- allocate errors ----------------------------------------------------
+
+    #[test]
+    fn allocate_empty_ratios_errors() {
+        let a = Money::new(100, usd());
+        match a.allocate(&[]).unwrap_err() {
+            MoneyError::InvalidAllocation(msg) => assert!(msg.contains("no ratios")),
+            other => panic!("expected InvalidAllocation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allocate_all_zero_errors() {
+        let a = Money::new(100, usd());
+        match a.allocate(&[0, 0, 0]).unwrap_err() {
+            MoneyError::InvalidAllocation(msg) => {
+                assert!(msg.contains("all ratios are zero"))
+            }
+            other => panic!("expected InvalidAllocation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn allocate_ratio_sum_overflow_errors() {
+        let a = Money::new(100, usd());
+        assert!(matches!(
+            a.allocate(&[u128::MAX, 1]),
+            Err(MoneyError::Overflow)
+        ));
+    }
+
+    #[test]
+    fn allocate_does_not_touch_receiver() {
+        let a = Money::new(100, usd());
+        let _ = a.allocate(&[1, 1, 1]).unwrap();
+        assert_eq!(a.as_string(), "100 USD");
     }
 }

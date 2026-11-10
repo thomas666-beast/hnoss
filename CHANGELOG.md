@@ -1,32 +1,44 @@
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-10
+
+### Added
+
+- `Money::multiply(factor: i128)` — exact integer multiplication. Returns
+  `Result<Money, MoneyError>`, failing on `i128` overflow.
+- `Money::divide(divisor: i128)` — **floor** division (like Python's `//`
+  and Ruby's `/`). Returns `Result<Money, MoneyError>`, failing on division
+  by zero or `i128::MIN / -1`.
+- `Money::divide_with_remainder(divisor: i128)` — returns `(quotient,
+  remainder)` as two `Money` values, with the invariant
+  `q * divisor + r == original` and the remainder's sign matching the
+  divisor's. Same failure modes as `divide`.
+- `tests/multiplication.rs` integration test.
+
+### Notes
+
+- Rust's `/` operator truncates toward zero. `Money::divide` deliberately
+  uses floor division for cross-language consistency with the Perl
+  `Coin::Hnoss` library and with Python / Ruby. For positive amounts the
+  two are identical.
+
 ## [0.4.0] - 2026-11-10
 
 ### Added
 
-- `Money::compare` — same-currency ordering returning
-  `Result<Ordering, MoneyError>` (`Ordering::Less` / `Equal` / `Greater`).
-  Errors on currency mismatch.
-- `Money::equals` — named alias for `==`; returns `bool`, never errors
-  (currencies that differ are simply unequal).
-- `Money::is_zero`, `Money::is_positive`, `Money::is_negative` — boolean
-  predicates. `is_positive` is false for zero.
+- `Money::compare`, `Money::equals`, `Money::is_zero`,
+  `Money::is_positive`, `Money::is_negative`.
 - `tests/comparison.rs` integration test.
 
 ### Notes
 
-- `Ord` / `PartialOrd` are deliberately not implemented. `cmp` cannot fail,
-  and panicking on currency mismatch is a footgun. Use `compare` explicitly.
+- `Ord` / `PartialOrd` are deliberately not implemented.
 
 ## [0.3.0] - 2026-11-10
 
 ### Added
 
-- `Money::add`, `Money::subtract` — same-currency addition and subtraction.
-  Both return `Result<Money, MoneyError>`, failing on currency mismatch or
-  `i128` overflow.
-- `Money::negate`, `Money::abs` — sign flip and absolute value, failing only
-  on `i128::MIN`.
+- `Money::add`, `Money::subtract`, `Money::negate`, `Money::abs`.
 - `tests/arithmetic.rs` integration test.
 
 ## [0.2.0] - 2026-11-10
@@ -42,10 +54,6 @@
 
 ### Added
 
-- `Currency` value object: constructs from a 3-to-8-letter code, normalizes
-  case, exposes `code()`, `exponent()`, `subunit()`.
-- `Repository`: built-in exponent table covering active ISO 4217 currencies,
-  metatokens, historical codes, and the documented non-ISO extensions BTC,
-  TRX, USDT. `Repository::shared()`, `Repository::from_pairs()`, `Default`
-  impl, `exponent()`, `knows()`, `fallback()`, `all_codes()`.
-- `CurrencyError` enum for construction errors.
+- `Currency` value object.
+- `Repository`: built-in exponent table (ISO 4217 + BTC / TRX / USDT).
+- `CurrencyError` enum.

@@ -5,27 +5,15 @@ use std::fmt;
 use crate::currency::CurrencyError;
 
 /// Every error that can happen inside `hnoss`.
-///
-/// Some variants carry structured data so callers can match on them without
-/// parsing error strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MoneyError {
     /// A currency code was malformed.
-    ///
-    /// This wraps [`CurrencyError`] so callers can distinguish "bad code"
-    /// from "unknown currency".
     InvalidCurrency(CurrencyError),
 
     /// An amount would exceed the representable range of `i128` minor units.
-    ///
-    /// `hnoss` uses `i128` for storage; amounts outside this range are
-    /// rejected. In practice, `i128` covers every realistic monetary value
-    /// (up to ~1.7×10³⁸ minor units).
     Overflow,
 
     /// An arithmetic operation was attempted between two different currencies.
-    ///
-    /// Carries both codes so the error message is actionable.
     CurrencyMismatch {
         /// The code on the left-hand side.
         left: String,
@@ -35,16 +23,19 @@ pub enum MoneyError {
 
     /// A non-integer value was passed where an integer was required.
     ///
-    /// Currently unused (all `Money` amounts are `i128` by construction);
-    /// reserved for a future API that accepts `&str` factors or divisors.
+    /// Currently unused; reserved for a future API that accepts `&str` factors.
     NonInteger(String),
 
     /// A division by zero was attempted.
     DivisionByZero,
 
-    /// A parsing error occurred.
+    /// An allocation (split) was requested with invalid inputs.
     ///
-    /// Carries a free-form message; a richer typed variant may come later.
+    /// The carried string explains the specific issue (e.g. empty ratio
+    /// list, or all ratios zero).
+    InvalidAllocation(String),
+
+    /// A parsing error occurred.
     Parse(String),
 }
 
@@ -60,6 +51,9 @@ impl fmt::Display for MoneyError {
             }
             MoneyError::NonInteger(s) => write!(f, "expected an integer, got {s:?}"),
             MoneyError::DivisionByZero => f.write_str("division by zero"),
+            MoneyError::InvalidAllocation(s) => {
+                write!(f, "invalid allocation: {s}")
+            }
             MoneyError::Parse(s) => write!(f, "parse error: {s}"),
         }
     }
@@ -119,6 +113,18 @@ mod tests {
     }
 
     #[test]
+    fn display_invalid_allocation() {
+        let e = MoneyError::InvalidAllocation("no ratios".into());
+        assert_eq!(format!("{e}"), "invalid allocation: no ratios");
+    }
+
+    #[test]
+    fn display_parse() {
+        let e = MoneyError::Parse("unexpected character".into());
+        assert_eq!(format!("{e}"), "parse error: unexpected character");
+    }
+
+    #[test]
     fn source_chains_for_invalid_currency() {
         let e = MoneyError::InvalidCurrency(CurrencyError::InvalidCode("X".into()));
         assert!(e.source().is_some());
@@ -128,6 +134,7 @@ mod tests {
     fn source_none_for_other_variants() {
         assert!(MoneyError::Overflow.source().is_none());
         assert!(MoneyError::DivisionByZero.source().is_none());
+        assert!(MoneyError::InvalidAllocation("x".into()).source().is_none());
     }
 
     #[test]
