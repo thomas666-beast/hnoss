@@ -1,6 +1,6 @@
 [package]
 name = "hnoss"
-version = "0.1.0"
+version = "0.8.0"
 edition = "2024"
 description = "Exact monetary values for Rust, with zero dependencies"
 license = "MIT OR Apache-2.0"
@@ -8,6 +8,16 @@ repository = "https://github.com/thomas666-beast/hnoss"
 readme = "README.md"
 keywords = ["money", "currency", "iso4217", "finance", "decimal"]
 categories = ["finance", "value-formatting"]
+include = [
+    "src/**/*.rs",
+    "examples/**/*.rs",
+    "tests/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [dependencies]
 # Intentionally empty. This crate has no runtime dependencies.
@@ -22,3 +32,6 @@ path = "src/lib.rs"
 [profile.release]
 lto = true
 codegen-units = 1
+
+[package.metadata.docs.rs]
+all-features = false

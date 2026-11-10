@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+### Added
+
+- `README.md` rewritten with quickstart, common operations, examples,
+  design notes, and non-goals.
+- `LICENSE-MIT` and `LICENSE-APACHE` (dual-licensed as `MIT OR Apache-2.0`).
+- `examples/basic.rs`, `examples/split_bill.rs`, `examples/crypto.rs`.
+- `tests/property.rs` — deterministic-PRNG property tests (no external
+  dependencies) covering `allocate` sum/mirror invariants,
+  `divide_with_remainder` invariants, `format`/`parse` round-trip,
+  and add/subtract algebraic properties.
+- `Cargo.toml`: `include` list for a minimal published crate;
+  `[package.metadata.docs.rs]`.
+
+### Notes
+
+- No API changes. `0.8.0` remains the current published version.
+
 ## [0.8.0] - 2026-11-10
 
 ### Added

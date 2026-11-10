@@ -30,9 +30,9 @@ pub struct ParseOptions {
 
     /// Integer grouping separator. Default: `","`.
     ///
-    /// This separator is stripped from the input before parsing; it is not
-    /// validated for correct group positions. Pass an empty string to
-    /// disable stripping (input must then contain no separators).
+    /// Stripped from the input before parsing, but only when the separators
+    /// appear in plausible positions (not leading, trailing, or doubled).
+    /// Group *positions* are not validated; `"12,34.56"` is accepted.
     pub thousands_separator: String,
 
     /// Number of digits per integer group. Default: `3`.
@@ -53,10 +53,6 @@ impl Default for ParseOptions {
     }
 }
 
-/// Parses `input` as a major-unit amount in `currency`, returning a `Money`.
-///
-/// This is the pure, testable core of parsing. [`crate::Money::from_str_with`]
-/// and [`Money::from_str`] delegate to it.
 pub(crate) fn parse_options(
     input: &str,
     currency: &Currency,
@@ -68,12 +64,6 @@ pub(crate) fn parse_options(
         ));
     }
 
-    if opts.decimal_mark == '\0' {
-        return Err(MoneyError::Parse(
-            "decimal_mark must be a real character".into(),
-        ));
-    }
-
     if !opts.thousands_separator.is_empty()
         && opts.thousands_separator.contains(opts.decimal_mark)
     {
@@ -82,14 +72,27 @@ pub(crate) fn parse_options(
         ));
     }
 
-    // Strip thousands separators.
+    // Reject separators in obviously bad positions (leading, trailing,
+    // doubled). Group *positions* themselves are not validated — "12,34"
+    // is accepted, matching the Perl behaviour.
+    if !opts.thousands_separator.is_empty() {
+        let sep = &opts.thousands_separator;
+        if input.starts_with(sep.as_str())
+            || input.ends_with(sep.as_str())
+            || input.contains(&format!("{sep}{sep}"))
+        {
+            return Err(MoneyError::Parse(format!(
+                "misplaced thousands separator in {input:?}"
+            )));
+        }
+    }
+
     let working: String = if opts.thousands_separator.is_empty() {
         input.to_string()
     } else {
         input.replace(&opts.thousands_separator, "")
     };
 
-    // Grammar: [+-]? <digits> ( <decimal_mark> <digits> )?
     let bytes = working.as_bytes();
     let mut i = 0;
 
@@ -112,7 +115,6 @@ pub(crate) fn parse_options(
         )));
     }
 
-    // decimal_mark is a char; encode to bytes for comparison.
     let mut dm_buf = [0u8; 4];
     let dm_bytes = opts.decimal_mark.encode_utf8(&mut dm_buf).as_bytes();
 
@@ -153,14 +155,12 @@ pub(crate) fn parse_options(
         )));
     }
 
-    // Right-pad fractional part.
     let mut frac_padded = String::with_capacity(exponent);
     frac_padded.push_str(frac_str);
     while frac_padded.len() < exponent {
         frac_padded.push('0');
     }
 
-    // Combine integer and padded fractional parts.
     let mut combined = String::with_capacity(int_str.len() + exponent);
     combined.push_str(int_str);
     combined.push_str(&frac_padded);
@@ -174,11 +174,6 @@ pub(crate) fn parse_options(
     Ok(Money::new(minor, currency.clone()))
 }
 
-/// Splits `"<amount> <code>"` (e.g. `"5.00 USD"`) into a minor-unit amount
-/// and a `Currency`.
-///
-/// Used by the `FromStr` impl. The split is on the **last** ASCII space,
-/// so the amount can contain no spaces (which our grammar rejects anyway).
 pub(crate) fn parse_with_currency(input: &str) -> Result<Money, MoneyError> {
     let (amount_str, code) = input.rsplit_once(' ').ok_or_else(|| {
         MoneyError::Parse(format!(
@@ -193,17 +188,6 @@ pub(crate) fn parse_with_currency(input: &str) -> Result<Money, MoneyError> {
 impl FromStr for Money {
     type Err = MoneyError;
 
-    /// Parses `"<amount> <code>"` using the default [`ParseOptions`].
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use hnoss::Money;
-    ///
-    /// let m: Money = "5.00 USD".parse().unwrap();
-    /// assert_eq!(m.amount(), 500);
-    /// assert_eq!(m.currency().code(), "USD");
-    /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         parse_with_currency(s)
     }
@@ -225,8 +209,6 @@ mod tests {
         Currency::new("BHD").unwrap()
     }
 
-    // --- defaults ----------------------------------------------------------
-
     #[test]
     fn default_options() {
         let o = ParseOptions::default();
@@ -235,75 +217,67 @@ mod tests {
         assert_eq!(o.group_size, 3);
     }
 
-    // --- basic parsing ------------------------------------------------------
-
     #[test]
     fn parse_usd_whole_dollars() {
-        let m = parse_options("5", &usd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 500);
-    }
-
-    #[test]
-    fn parse_usd_cents() {
-        let m = parse_options("5.00", &usd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 500);
-
-        let m = parse_options("5.5", &usd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 550);
-
-        let m = parse_options("0.05", &usd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 5);
-    }
-
-    #[test]
-    fn parse_signs() {
         assert_eq!(
-            parse_options("-5", &usd(), &ParseOptions::default())
-                .unwrap()
-                .amount(),
-            -500
-        );
-        assert_eq!(
-            parse_options("+5", &usd(), &ParseOptions::default())
+            parse_options("5", &usd(), &ParseOptions::default())
                 .unwrap()
                 .amount(),
             500
         );
-        assert_eq!(
-            parse_options("-0.05", &usd(), &ParseOptions::default())
-                .unwrap()
-                .amount(),
-            -5
-        );
+    }
+
+    #[test]
+    fn parse_usd_cents() {
+        let o = ParseOptions::default();
+        assert_eq!(parse_options("5.00", &usd(), &o).unwrap().amount(), 500);
+        assert_eq!(parse_options("5.5", &usd(), &o).unwrap().amount(), 550);
+        assert_eq!(parse_options("0.05", &usd(), &o).unwrap().amount(), 5);
+    }
+
+    #[test]
+    fn parse_signs() {
+        let o = ParseOptions::default();
+        assert_eq!(parse_options("-5", &usd(), &o).unwrap().amount(), -500);
+        assert_eq!(parse_options("+5", &usd(), &o).unwrap().amount(), 500);
+        assert_eq!(parse_options("-0.05", &usd(), &o).unwrap().amount(), -5);
     }
 
     #[test]
     fn parse_jpy() {
-        let m = parse_options("500", &jpy(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 500);
+        assert_eq!(
+            parse_options("500", &jpy(), &ParseOptions::default())
+                .unwrap()
+                .amount(),
+            500
+        );
     }
 
     #[test]
     fn parse_bhd() {
-        let m = parse_options("0.500", &bhd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 500);
-
-        let m = parse_options("1.2", &bhd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 1200); // padded to 1.200
+        let o = ParseOptions::default();
+        assert_eq!(parse_options("0.500", &bhd(), &o).unwrap().amount(), 500);
+        assert_eq!(parse_options("1.2", &bhd(), &o).unwrap().amount(), 1200);
     }
-
-    // --- grouping ----------------------------------------------------------
 
     #[test]
     fn parse_with_thousands_separator() {
-        let m = parse_options("1,234.56", &usd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 123456);
+        assert_eq!(
+            parse_options("1,234.56", &usd(), &ParseOptions::default())
+                .unwrap()
+                .amount(),
+            123456
+        );
     }
 
     #[test]
     fn parse_with_loose_grouping() {
-        let m = parse_options("12,34.56", &usd(), &ParseOptions::default()).unwrap();
-        assert_eq!(m.amount(), 123456);
+        assert_eq!(
+            parse_options("12,34.56", &usd(), &ParseOptions::default())
+                .unwrap()
+                .amount(),
+            123456
+        );
     }
 
     #[test]
@@ -312,11 +286,11 @@ mod tests {
             thousands_separator: "".into(),
             ..Default::default()
         };
-        let m = parse_options("1234.56", &usd(), &o).unwrap();
-        assert_eq!(m.amount(), 123456);
+        assert_eq!(
+            parse_options("1234.56", &usd(), &o).unwrap().amount(),
+            123456
+        );
     }
-
-    // --- custom separators --------------------------------------------------
 
     #[test]
     fn parse_european() {
@@ -325,11 +299,11 @@ mod tests {
             thousands_separator: ".".into(),
             ..Default::default()
         };
-        let m = parse_options("1.234,56", &usd(), &o).unwrap();
-        assert_eq!(m.amount(), 123456);
+        assert_eq!(
+            parse_options("1.234,56", &usd(), &o).unwrap().amount(),
+            123456
+        );
     }
-
-    // --- errors -------------------------------------------------------------
 
     #[test]
     fn parse_empty_errors() {
@@ -343,7 +317,8 @@ mod tests {
     fn parse_bad_grammar_errors() {
         let o = ParseOptions::default();
         for bad in [
-            "abc", "5.", ".5", "5e3", "5 5", "--5", "-", "+", "5..5", "5,", ",5",
+            "abc", "5.", ".5", "5e3", "5 5", "--5", "-", "+", "5..5", "5,", ",5", "5,,6",
+            ",5,6", "5,6,", ",,5",
         ] {
             assert!(
                 matches!(parse_options(bad, &usd(), &o), Err(MoneyError::Parse(_))),
@@ -394,8 +369,6 @@ mod tests {
         ));
     }
 
-    // --- FromStr ------------------------------------------------------------
-
     #[test]
     fn from_str_basic() {
         let m: Money = "5.00 USD".parse().unwrap();
@@ -423,20 +396,16 @@ mod tests {
     #[test]
     fn from_str_roundtrip() {
         let m = Money::new(123456, usd());
-        let s = m.as_string(); // "123456 USD" (raw, not format)
-        // FromStr expects major units, so "123456 USD" parses as 12345600
-        // cents — this test is about the string form being well-formed,
-        // not about matching.
+        let s = m.as_string();
         let parsed: Money = s.parse().unwrap();
         assert_eq!(parsed.currency().code(), "USD");
-        // The parsed value is 123456 major units, not 123456 minor units.
         assert_eq!(parsed.amount(), 12345600);
     }
 
     #[test]
     fn from_str_format_roundtrip() {
         let m = Money::new(123456, usd());
-        let s = m.format(); // "1,234.56 USD"
+        let s = m.format();
         let parsed: Money = s.parse().unwrap();
         assert_eq!(parsed, m);
     }

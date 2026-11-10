@@ -6,8 +6,7 @@ use hnoss::{Currency, Money, MoneyError, ParseOptions};
 
 #[test]
 fn parse_usd() {
-    let m = Money::from_str_with_code("5.00", "USD", &ParseOptions::default())
-        .unwrap();
+    let m = Money::from_str_with_code("5.00", "USD", &ParseOptions::default()).unwrap();
     assert_eq!(m.amount(), 500);
     assert_eq!(m.currency().code(), "USD");
 }
@@ -16,7 +15,8 @@ fn parse_usd() {
 fn parse_usd_whole() {
     assert_eq!(
         Money::from_str_with_code("5", "USD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         500
     );
 }
@@ -25,7 +25,8 @@ fn parse_usd_whole() {
 fn parse_usd_half_cent() {
     assert_eq!(
         Money::from_str_with_code("5.5", "USD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         550
     );
 }
@@ -34,7 +35,8 @@ fn parse_usd_half_cent() {
 fn parse_negative() {
     assert_eq!(
         Money::from_str_with_code("-0.05", "USD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         -5
     );
 }
@@ -43,7 +45,8 @@ fn parse_negative() {
 fn parse_positive_sign() {
     assert_eq!(
         Money::from_str_with_code("+0.05", "USD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         5
     );
 }
@@ -52,7 +55,8 @@ fn parse_positive_sign() {
 fn parse_jpy_whole() {
     assert_eq!(
         Money::from_str_with_code("500", "JPY", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         500
     );
 }
@@ -61,7 +65,8 @@ fn parse_jpy_whole() {
 fn parse_bhd() {
     assert_eq!(
         Money::from_str_with_code("0.500", "BHD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         500
     );
 }
@@ -70,7 +75,8 @@ fn parse_bhd() {
 fn parse_btc() {
     assert_eq!(
         Money::from_str_with_code("0.00000500", "BTC", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         500
     );
 }
@@ -79,7 +85,8 @@ fn parse_btc() {
 fn parse_usdt() {
     assert_eq!(
         Money::from_str_with_code("1.000000", "USDT", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         1_000_000
     );
 }
@@ -88,7 +95,8 @@ fn parse_usdt() {
 fn parse_trx() {
     assert_eq!(
         Money::from_str_with_code("1.000000", "TRX", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         1_000_000
     );
 }
@@ -97,7 +105,8 @@ fn parse_trx() {
 fn parse_with_grouping() {
     assert_eq!(
         Money::from_str_with_code("1,234.56", "USD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         123456
     );
 }
@@ -106,7 +115,8 @@ fn parse_with_grouping() {
 fn parse_with_loose_grouping() {
     assert_eq!(
         Money::from_str_with_code("12,34.56", "USD", &ParseOptions::default())
-            .unwrap().amount(),
+            .unwrap()
+            .amount(),
         123456
     );
 }
@@ -119,7 +129,9 @@ fn parse_european() {
         ..Default::default()
     };
     assert_eq!(
-        Money::from_str_with_code("1.234,56", "EUR", &opts).unwrap().amount(),
+        Money::from_str_with_code("1.234,56", "EUR", &opts)
+            .unwrap()
+            .amount(),
         123456
     );
 }
@@ -132,7 +144,9 @@ fn parse_custom_separators() {
         ..Default::default()
     };
     assert_eq!(
-        Money::from_str_with_code("1 234.56", "USD", &opts).unwrap().amount(),
+        Money::from_str_with_code("1 234.56", "USD", &opts)
+            .unwrap()
+            .amount(),
         123456
     );
 }
@@ -151,14 +165,10 @@ fn parse_empty_errors() {
 fn parse_malformed_errors() {
     let opts = ParseOptions::default();
     for bad in [
-        "abc", "5.", ".5", "5e3", "5 5", "--5", "-", "+", "5..5",
-        "5,", ",5", "5,,6",
+        "abc", "5.", ".5", "5e3", "5 5", "--5", "-", "+", "5..5", "5,", ",5", "5,,6",
     ] {
         let err = Money::from_str_with_code(bad, "USD", &opts).unwrap_err();
-        assert!(
-            matches!(err, MoneyError::Parse(_)),
-            "{bad:?} -> {err:?}"
-        );
+        assert!(matches!(err, MoneyError::Parse(_)), "{bad:?} -> {err:?}");
     }
 }
 
@@ -249,8 +259,7 @@ fn format_then_parse_roundtrips() {
 #[test]
 fn from_str_with_currency_object() {
     let usd = Currency::new("USD").unwrap();
-    let m = Money::from_str_with("5.00", &usd, &ParseOptions::default())
-        .unwrap();
+    let m = Money::from_str_with("5.00", &usd, &ParseOptions::default()).unwrap();
     assert_eq!(m.amount(), 500);
     assert_eq!(m.currency().code(), "USD");
 }

@@ -9,15 +9,6 @@
 //! The crate has **zero runtime dependencies**: everything here uses only
 //! `std`.
 //!
-//! # Design
-//!
-//! * [`Currency`] is a small value object wrapping a 3-to-8-letter currency
-//!   code and its exponent (number of decimal places).
-//! * [`Money`] is an immutable amount in a given currency. Construction,
-//!   equality, and stringification are available; arithmetic, comparison,
-//!   allocation, formatting, and parsing arrive in later releases.
-//! * [`MoneyError`] is the crate's single error type.
-//!
 //! # Example
 //!
 //! ```
@@ -27,9 +18,17 @@
 //! let price = Money::new(500_i128, usd);
 //! assert_eq!(price.amount(), 500);
 //! assert_eq!(price.as_string(), "500 USD");
-//! ```
+//! assert_eq!(price.format(), "5.00 USD");
+//!
 //! let parsed: Money = "5.00 USD".parse().unwrap();
 //! assert_eq!(parsed.amount(), 500);
+//! ```
+//!
+//! # Examples
+//!
+//! See the `examples/` directory for runnable programs:
+//! `cargo run --example basic`, `cargo run --example split_bill`,
+//! `cargo run --example crypto`.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

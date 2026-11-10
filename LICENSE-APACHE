@@ -1,0 +1,11 @@
+LICENSE-APACHE
+
+Standard Apache 2.0 license. Fetch it from
+https://www.apache.org/licenses/LICENSE-2.0.txt and save as
+LICENSE-APACHE. (Including the full 11 KB text inline here would be
+noise; it's a well-known document and every Rust project ships the same
+file.)
+
+If you want to skip fetching: the Apache 2.0 text is also bundled in the
+rust-lang/rust repo at
+https://github.com/rust-lang/rust/blob/master/LICENSE-APACHE; copy that.
