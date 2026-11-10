@@ -35,10 +35,12 @@
 
 mod currency;
 mod error;
+mod format;
 mod money;
 mod repository;
 
 pub use crate::currency::{Currency, CurrencyError};
 pub use crate::error::MoneyError;
+pub use crate::format::FormatOptions;
 pub use crate::money::Money;
 pub use crate::repository::Repository;

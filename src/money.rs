@@ -54,6 +54,10 @@ use crate::error::MoneyError;
 /// methods. Equality never fails and is total; ordering fails on currency
 /// mismatch. The `Ord` and `PartialOrd` traits are deliberately not
 /// implemented.
+///
+/// * `format` and `format_with` render the amount using the currency's
+///   exponent. `format` uses default options and cannot fail; `format_with`
+///   accepts custom options and fails on invalid `group_size`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Money {
     amount: i128,
@@ -142,6 +146,67 @@ impl Money {
     pub fn abs(&self) -> Result<Money, MoneyError> {
         let amount = self.amount.checked_abs().ok_or(MoneyError::Overflow)?;
         Ok(Money::new(amount, self.currency.clone()))
+    }
+
+    /// Formats the amount in a human-readable form, using the currency's
+    /// exponent (2 for USD, 0 for JPY, 3 for BHD, 8 for BTC, ...) and the
+    /// default [`FormatOptions`](crate::FormatOptions).
+    ///
+    /// This method never fails, because the default options are always
+    /// valid. For control over separators, grouping, or currency
+    /// inclusion, use [`Money::format_with`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::Money;
+    ///
+    /// assert_eq!(
+    ///     Money::from_code(500_i128, "USD").unwrap().format(),
+    ///     "5.00 USD"
+    /// );
+    /// assert_eq!(
+    ///     Money::from_code(500_i128, "JPY").unwrap().format(),
+    ///     "500 JPY"
+    /// );
+    /// assert_eq!(
+    ///     Money::from_code(500_i128, "BHD").unwrap().format(),
+    ///     "0.500 BHD"
+    /// );
+    /// ```
+    pub fn format(&self) -> String {
+        crate::format::render_options(
+            self.amount,
+            &self.currency,
+            &crate::FormatOptions::default(),
+        )
+        .expect("default FormatOptions are always valid")
+    }
+
+    /// Formats the amount using custom [`FormatOptions`](crate::FormatOptions).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MoneyError::InvalidAllocation`] if `opts.group_size == 0`.
+    /// (The variant is reused from allocation because both are "invalid
+    /// caller input" conditions; a dedicated `InvalidFormat` variant can be
+    /// added later if the need to distinguish them arises.)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::{FormatOptions, Money};
+    ///
+    /// let m = Money::from_code(123456_i128, "EUR").unwrap();
+    /// let opts = FormatOptions {
+    ///     decimal_mark: ',',
+    ///     thousands_separator: ".".into(),
+    ///     ..Default::default()
+    /// };
+    /// assert_eq!(m.format_with(&opts).unwrap(), "1.234,56 EUR");
+    /// ```
+    pub fn format_with(&self, opts: &crate::FormatOptions) -> Result<String, MoneyError> {
+        crate::format::render_options(self.amount, &self.currency, opts)
     }
 
     // --- comparison ---------------------------------------------------------
@@ -815,5 +880,93 @@ mod tests {
         let a = Money::new(100, usd());
         let _ = a.allocate(&[1, 1, 1]).unwrap();
         assert_eq!(a.as_string(), "100 USD");
+    }
+
+    // --- format -------------------------------------------------------------
+
+    #[test]
+    fn format_default_usd() {
+        assert_eq!(Money::new(500, usd()).format(), "5.00 USD");
+        assert_eq!(Money::new(0, usd()).format(), "0.00 USD");
+        assert_eq!(Money::new(-5, usd()).format(), "-0.05 USD");
+        assert_eq!(Money::new(123456, usd()).format(), "1,234.56 USD");
+    }
+
+    #[test]
+    fn format_default_jpy() {
+        let jpy = Currency::new("JPY").unwrap();
+        assert_eq!(Money::new(500, jpy.clone()).format(), "500 JPY");
+        assert_eq!(Money::new(-500, jpy).format(), "-500 JPY");
+    }
+
+    #[test]
+    fn format_default_bhd() {
+        let bhd = Currency::new("BHD").unwrap();
+        assert_eq!(Money::new(500, bhd).format(), "0.500 BHD");
+    }
+
+    #[test]
+    fn format_default_btc() {
+        let btc = Currency::new("BTC").unwrap();
+        assert_eq!(Money::new(500, btc).format(), "0.00000500 BTC");
+        assert_eq!(
+            Money::new(100_000_000, Currency::new("BTC").unwrap()).format(),
+            "1.00000000 BTC"
+        );
+    }
+
+    #[test]
+    fn format_default_usdt() {
+        let usdt = Currency::new("USDT").unwrap();
+        assert_eq!(Money::new(1_000_000, usdt).format(), "1.000000 USDT");
+    }
+
+    #[test]
+    fn format_with_custom_options() {
+        let m = Money::new(123456, usd());
+        let opts = crate::FormatOptions {
+            decimal_mark: ',',
+            thousands_separator: ".".into(),
+            ..Default::default()
+        };
+        assert_eq!(m.format_with(&opts).unwrap(), "1.234,56 USD");
+    }
+
+    #[test]
+    fn format_with_no_currency() {
+        let m = Money::new(500, usd());
+        let opts = crate::FormatOptions {
+            with_currency: false,
+            ..Default::default()
+        };
+        assert_eq!(m.format_with(&opts).unwrap(), "5.00");
+    }
+
+    #[test]
+    fn format_with_zero_group_size_errors() {
+        let m = Money::new(500, usd());
+        let opts = crate::FormatOptions {
+            group_size: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            m.format_with(&opts),
+            Err(MoneyError::InvalidAllocation(_))
+        ));
+    }
+
+    #[test]
+    fn format_does_not_touch_receiver() {
+        let m = Money::new(500, usd());
+        let _ = m.format();
+        assert_eq!(m.amount(), 500);
+    }
+
+    #[test]
+    fn format_differs_from_as_string() {
+        // as_string is canonical; format is display.
+        let m = Money::new(500, usd());
+        assert_eq!(m.as_string(), "500 USD");
+        assert_eq!(m.format(), "5.00 USD");
     }
 }

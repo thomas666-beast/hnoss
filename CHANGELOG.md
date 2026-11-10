@@ -1,33 +1,37 @@
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-10
+
+### Added
+
+- `Money::allocate(&[u128]) -> Result<Vec<Money>, MoneyError>` — split an
+  amount across N recipients by integer ratios. The sum of the returned
+  values is exactly the original amount (no minor units lost or created).
+  Leftover units are distributed one at a time to the earliest indices.
+  Mirror-symmetric for negative amounts: `allocate(-x)` is element-wise
+  the negation of `allocate(x)`.
+- `MoneyError::InvalidAllocation(String)` — raised for empty or all-zero
+  ratio lists.
+- `tests/allocation.rs` integration test.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added
 
-- `Money::multiply(factor: i128)` — exact integer multiplication. Returns
-  `Result<Money, MoneyError>`, failing on `i128` overflow.
-- `Money::divide(divisor: i128)` — **floor** division (like Python's `//`
-  and Ruby's `/`). Returns `Result<Money, MoneyError>`, failing on division
-  by zero or `i128::MIN / -1`.
-- `Money::divide_with_remainder(divisor: i128)` — returns `(quotient,
-  remainder)` as two `Money` values, with the invariant
-  `q * divisor + r == original` and the remainder's sign matching the
-  divisor's. Same failure modes as `divide`.
+- `Money::multiply`, `Money::divide` (floor), `Money::divide_with_remainder`.
 - `tests/multiplication.rs` integration test.
 
 ### Notes
 
-- Rust's `/` operator truncates toward zero. `Money::divide` deliberately
-  uses floor division for cross-language consistency with the Perl
-  `Coin::Hnoss` library and with Python / Ruby. For positive amounts the
-  two are identical.
+- Division uses floor semantics for consistency with the Perl implementation
+  and with Python / Ruby.
 
 ## [0.4.0] - 2026-11-10
 
 ### Added
 
-- `Money::compare`, `Money::equals`, `Money::is_zero`,
-  `Money::is_positive`, `Money::is_negative`.
+- `Money::compare`, `Money::equals`, `Money::is_zero`, `Money::is_positive`,
+  `Money::is_negative`.
 - `tests/comparison.rs` integration test.
 
 ### Notes
