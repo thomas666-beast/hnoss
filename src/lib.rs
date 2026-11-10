@@ -13,18 +13,20 @@
 //!
 //! * [`Currency`] is a small value object wrapping a 3-to-8-letter currency
 //!   code and its exponent (number of decimal places).
-//! * [`Money`] (coming in a later task) is an immutable amount in a given
-//!   currency, with exact arithmetic, comparison, allocation, formatting,
-//!   and parsing.
+//! * [`Money`] is an immutable amount in a given currency. Construction,
+//!   equality, and stringification are available; arithmetic, comparison,
+//!   allocation, formatting, and parsing arrive in later releases.
+//! * [`MoneyError`] is the crate's single error type.
 //!
 //! # Example
 //!
 //! ```
-//! use hnoss::Currency;
+//! use hnoss::{Currency, Money};
 //!
 //! let usd = Currency::new("USD").unwrap();
-//! assert_eq!(usd.code(), "USD");
-//! assert_eq!(usd.exponent(), 2);
+//! let price = Money::new(500_i128, usd);
+//! assert_eq!(price.amount(), 500);
+//! assert_eq!(price.as_string(), "500 USD");
 //! ```
 
 #![forbid(unsafe_code)]
@@ -32,7 +34,11 @@
 #![warn(rust_2018_idioms)]
 
 mod currency;
+mod error;
+mod money;
 mod repository;
 
 pub use crate::currency::{Currency, CurrencyError};
+pub use crate::error::MoneyError;
+pub use crate::money::Money;
 pub use crate::repository::Repository;
