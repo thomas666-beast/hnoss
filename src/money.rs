@@ -58,6 +58,12 @@ use crate::error::MoneyError;
 /// * `format` and `format_with` render the amount using the currency's
 ///   exponent. `format` uses default options and cannot fail; `format_with`
 ///   accepts custom options and fails on invalid `group_size`.
+///
+/// * [`Money::from_str_with`] and [`Money::from_str_with_code`] parse a
+///   major-unit string given a known currency.
+/// * The [`FromStr`](std::str::FromStr) impl parses `"<amount> <code>"`
+///   (e.g. `"5.00 USD"`) using the default
+///   [`ParseOptions`](crate::ParseOptions).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Money {
     amount: i128,
@@ -146,6 +152,66 @@ impl Money {
     pub fn abs(&self) -> Result<Money, MoneyError> {
         let amount = self.amount.checked_abs().ok_or(MoneyError::Overflow)?;
         Ok(Money::new(amount, self.currency.clone()))
+    }
+
+    /// Parses `input` as a major-unit amount in `currency`.
+    ///
+    /// Counterpart to the [`FromStr`](std::str::FromStr) impl for the case
+    /// where the currency is already known (e.g. from a database column)
+    /// and the input contains only the numeric part.
+    ///
+    /// # Errors
+    ///
+    /// * [`MoneyError::Parse`] for malformed input or too many decimals.
+    /// * [`MoneyError::InvalidAllocation`] if `opts.group_size == 0`.
+    /// * [`MoneyError::Overflow`] if the result does not fit in `i128`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::{Currency, Money, ParseOptions};
+    ///
+    /// let usd = Currency::new("USD").unwrap();
+    /// let m = Money::from_str_with("5.00", &usd, &ParseOptions::default())
+    ///     .unwrap();
+    /// assert_eq!(m.amount(), 500);
+    /// ```
+    pub fn from_str_with(
+        input: &str,
+        currency: &Currency,
+        opts: &crate::ParseOptions,
+    ) -> Result<Money, MoneyError> {
+        crate::parse::parse_options(input, currency, opts)
+    }
+
+    /// Convenience over [`Money::from_str_with`] that accepts a code string.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`Money::from_str_with`], plus
+    /// [`MoneyError::InvalidCurrency`] if `code` is not 3 to 8 ASCII letters.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::{Money, ParseOptions};
+    ///
+    /// let m = Money::from_str_with_code("5.00", "USD", &ParseOptions::default())
+    ///     .unwrap();
+    /// assert_eq!(m.amount(), 500);
+    ///
+    /// assert!(
+    ///     Money::from_str_with_code("5.00", "U5D", &ParseOptions::default())
+    ///         .is_err()
+    /// );
+    /// ```
+    pub fn from_str_with_code(
+        input: &str,
+        code: impl AsRef<str>,
+        opts: &crate::ParseOptions,
+    ) -> Result<Money, MoneyError> {
+        let currency = Currency::new(code)?;
+        Self::from_str_with(input, &currency, opts)
     }
 
     /// Formats the amount in a human-readable form, using the currency's
@@ -968,5 +1034,54 @@ mod tests {
         let m = Money::new(500, usd());
         assert_eq!(m.as_string(), "500 USD");
         assert_eq!(m.format(), "5.00 USD");
+    }
+
+    // --- from_str_with ------------------------------------------------------
+
+    #[test]
+    fn from_str_with_parses_usd() {
+        let usd = Currency::new("USD").unwrap();
+        let m =
+            Money::from_str_with("5.00", &usd, &crate::ParseOptions::default()).unwrap();
+        assert_eq!(m.amount(), 500);
+    }
+
+    #[test]
+    fn from_str_with_parses_jpy() {
+        let jpy = Currency::new("JPY").unwrap();
+        let m =
+            Money::from_str_with("500", &jpy, &crate::ParseOptions::default()).unwrap();
+        assert_eq!(m.amount(), 500);
+    }
+
+    #[test]
+    fn from_str_with_code_parses() {
+        let m = Money::from_str_with_code("5.00", "USD", &crate::ParseOptions::default())
+            .unwrap();
+        assert_eq!(m.amount(), 500);
+    }
+
+    #[test]
+    fn from_str_with_code_rejects_bad_code() {
+        let err =
+            Money::from_str_with_code("5.00", "U5D", &crate::ParseOptions::default())
+                .unwrap_err();
+        assert!(matches!(err, MoneyError::InvalidCurrency(_)));
+    }
+
+    #[test]
+    fn from_str_with_custom_options() {
+        let eur = Currency::new("EUR").unwrap();
+        let m = Money::from_str_with(
+            "1.234,56",
+            &eur,
+            &crate::ParseOptions {
+                decimal_mark: ',',
+                thousands_separator: ".".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(m.amount(), 123456);
     }
 }

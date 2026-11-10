@@ -28,6 +28,8 @@
 //! assert_eq!(price.amount(), 500);
 //! assert_eq!(price.as_string(), "500 USD");
 //! ```
+//! let parsed: Money = "5.00 USD".parse().unwrap();
+//! assert_eq!(parsed.amount(), 500);
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -37,10 +39,12 @@ mod currency;
 mod error;
 mod format;
 mod money;
+mod parse;
 mod repository;
 
 pub use crate::currency::{Currency, CurrencyError};
 pub use crate::error::MoneyError;
 pub use crate::format::FormatOptions;
 pub use crate::money::Money;
+pub use crate::parse::ParseOptions;
 pub use crate::repository::Repository;
