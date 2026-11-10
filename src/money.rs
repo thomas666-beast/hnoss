@@ -16,12 +16,13 @@ use crate::error::MoneyError;
 /// use hnoss::{Currency, Money};
 ///
 /// let usd = Currency::new("USD").unwrap();
-/// let price = Money::new(500_i128, usd.clone());
+/// let a = Money::new(500_i128, usd.clone());
+/// let b = Money::new(250_i128, usd.clone());
 ///
-/// assert_eq!(price.amount(), 500);
-/// assert_eq!(price.currency(), &usd);
-/// assert_eq!(price.as_string(), "500 USD");
-/// assert_eq!(format!("{price}"), "500 USD");
+/// assert_eq!(a.add(&b).unwrap().as_string(), "750 USD");
+/// assert_eq!(a.subtract(&b).unwrap().as_string(), "250 USD");
+/// assert_eq!(a.negate().unwrap().as_string(), "-500 USD");
+/// assert_eq!(a.abs().unwrap().as_string(), "500 USD");
 /// ```
 ///
 /// # Construction
@@ -30,8 +31,12 @@ use crate::error::MoneyError;
 /// minor units and a `Currency` object. For convenience, [`Money::from_code`]
 /// wraps a currency-code string.
 ///
-/// Arithmetic (add, subtract, ...) is not implemented yet; it arrives in a
-/// later release.
+/// # Arithmetic
+///
+/// All arithmetic takes `&self` and returns a new `Money`; the receiver is
+/// never modified. Every operation is fallible: `add` / `subtract` fail on
+/// currency mismatch or `i128` overflow, and `negate` / `abs` fail on
+/// `i128::MIN` (whose negation overflows).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Money {
     amount: i128,
@@ -109,6 +114,126 @@ impl Money {
     pub fn as_string(&self) -> String {
         format!("{} {}", self.amount, self.currency.code())
     }
+
+    // --- arithmetic ---------------------------------------------------------
+
+    /// Returns `self + other`.
+    ///
+    /// Both must be in the same currency. The receiver is not modified; a
+    /// new `Money` is returned.
+    ///
+    /// # Errors
+    ///
+    /// * [`MoneyError::CurrencyMismatch`] if `self.currency != other.currency`.
+    /// * [`MoneyError::Overflow`] if the result does not fit in `i128`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::Money;
+    ///
+    /// let a = Money::from_code(500_i128, "USD").unwrap();
+    /// let b = Money::from_code(250_i128, "USD").unwrap();
+    /// assert_eq!(a.add(&b).unwrap().as_string(), "750 USD");
+    ///
+    /// let eur = Money::from_code(500_i128, "EUR").unwrap();
+    /// assert!(a.add(&eur).is_err());
+    /// ```
+    pub fn add(&self, other: &Money) -> Result<Money, MoneyError> {
+        self.check_same_currency(other)?;
+        let amount = self
+            .amount
+            .checked_add(other.amount)
+            .ok_or(MoneyError::Overflow)?;
+        Ok(Money::new(amount, self.currency.clone()))
+    }
+
+    /// Returns `self - other`.
+    ///
+    /// Both must be in the same currency. The receiver is not modified; a
+    /// new `Money` is returned. The result may be negative.
+    ///
+    /// # Errors
+    ///
+    /// * [`MoneyError::CurrencyMismatch`] if `self.currency != other.currency`.
+    /// * [`MoneyError::Overflow`] if the result does not fit in `i128`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::Money;
+    ///
+    /// let a = Money::from_code(500_i128, "USD").unwrap();
+    /// let b = Money::from_code(250_i128, "USD").unwrap();
+    /// assert_eq!(a.subtract(&b).unwrap().as_string(), "250 USD");
+    /// assert_eq!(b.subtract(&a).unwrap().as_string(), "-250 USD");
+    /// ```
+    pub fn subtract(&self, other: &Money) -> Result<Money, MoneyError> {
+        self.check_same_currency(other)?;
+        let amount = self
+            .amount
+            .checked_sub(other.amount)
+            .ok_or(MoneyError::Overflow)?;
+        Ok(Money::new(amount, self.currency.clone()))
+    }
+
+    /// Returns `-self`.
+    ///
+    /// # Errors
+    ///
+    /// [`MoneyError::Overflow`] if `self.amount == i128::MIN`, whose negation
+    /// does not fit in `i128`. This is the only failure mode.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::Money;
+    ///
+    /// let a = Money::from_code(500_i128, "USD").unwrap();
+    /// assert_eq!(a.negate().unwrap().as_string(), "-500 USD");
+    ///
+    /// let b = Money::from_code(-500_i128, "USD").unwrap();
+    /// assert_eq!(b.negate().unwrap().as_string(), "500 USD");
+    /// ```
+    pub fn negate(&self) -> Result<Money, MoneyError> {
+        let amount = self.amount.checked_neg().ok_or(MoneyError::Overflow)?;
+        Ok(Money::new(amount, self.currency.clone()))
+    }
+
+    /// Returns `|self|`.
+    ///
+    /// # Errors
+    ///
+    /// [`MoneyError::Overflow`] if `self.amount == i128::MIN`, whose absolute
+    /// value does not fit in `i128`. This is the only failure mode.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use hnoss::Money;
+    ///
+    /// let a = Money::from_code(-500_i128, "USD").unwrap();
+    /// assert_eq!(a.abs().unwrap().as_string(), "500 USD");
+    ///
+    /// let b = Money::from_code(500_i128, "USD").unwrap();
+    /// assert_eq!(b.abs().unwrap().as_string(), "500 USD");
+    /// ```
+    pub fn abs(&self) -> Result<Money, MoneyError> {
+        let amount = self.amount.checked_abs().ok_or(MoneyError::Overflow)?;
+        Ok(Money::new(amount, self.currency.clone()))
+    }
+
+    // --- internals ----------------------------------------------------------
+
+    fn check_same_currency(&self, other: &Money) -> Result<(), MoneyError> {
+        if self.currency != other.currency {
+            return Err(MoneyError::CurrencyMismatch {
+                left: self.currency.code().to_string(),
+                right: other.currency.code().to_string(),
+            });
+        }
+        Ok(())
+    }
 }
 
 impl fmt::Display for Money {
@@ -128,6 +253,8 @@ mod tests {
     fn eur() -> Currency {
         Currency::new("EUR").unwrap()
     }
+
+    // --- construction -------------------------------------------------------
 
     #[test]
     fn new_stores_fields() {
@@ -161,16 +288,13 @@ mod tests {
         ));
     }
 
+    // --- display / stringification ------------------------------------------
+
     #[test]
     fn as_string_format() {
-        let m = Money::new(500, usd());
-        assert_eq!(m.as_string(), "500 USD");
-
-        let n = Money::new(-5, usd());
-        assert_eq!(n.as_string(), "-5 USD");
-
-        let z = Money::new(0, usd());
-        assert_eq!(z.as_string(), "0 USD");
+        assert_eq!(Money::new(500, usd()).as_string(), "500 USD");
+        assert_eq!(Money::new(-5, usd()).as_string(), "-5 USD");
+        assert_eq!(Money::new(0, usd()).as_string(), "0 USD");
     }
 
     #[test]
@@ -188,25 +312,21 @@ mod tests {
         assert!(s.contains("USD"));
     }
 
+    // --- equality ------------------------------------------------------------
+
     #[test]
     fn equality_same_currency() {
-        let a = Money::new(500, usd());
-        let b = Money::new(500, usd());
-        assert_eq!(a, b);
+        assert_eq!(Money::new(500, usd()), Money::new(500, usd()));
     }
 
     #[test]
     fn inequality_same_currency() {
-        let a = Money::new(500, usd());
-        let b = Money::new(501, usd());
-        assert_ne!(a, b);
+        assert_ne!(Money::new(500, usd()), Money::new(501, usd()));
     }
 
     #[test]
     fn inequality_different_currency() {
-        let a = Money::new(500, usd());
-        let b = Money::new(500, eur());
-        assert_ne!(a, b);
+        assert_ne!(Money::new(500, usd()), Money::new(500, eur()));
     }
 
     #[test]
@@ -221,17 +341,155 @@ mod tests {
         use std::collections::HashSet;
         let mut s = HashSet::new();
         s.insert(Money::new(500, usd()));
-        s.insert(Money::new(500, usd())); // duplicate
+        s.insert(Money::new(500, usd()));
         s.insert(Money::new(500, eur()));
         assert_eq!(s.len(), 2);
     }
 
     #[test]
     fn extreme_amounts_are_representable() {
-        // i128 range in minor units: about 1.7e38. That's a lot of cents.
         let max = Money::new(i128::MAX, usd());
         let min = Money::new(i128::MIN, usd());
         assert_eq!(max.amount(), i128::MAX);
         assert_eq!(min.amount(), i128::MIN);
+    }
+
+    // --- add -----------------------------------------------------------------
+
+    #[test]
+    fn add_returns_new_money() {
+        let a = Money::new(500, usd());
+        let b = Money::new(250, usd());
+        let sum = a.add(&b).unwrap();
+        assert_eq!(sum.as_string(), "750 USD");
+        // Originals unchanged
+        assert_eq!(a.as_string(), "500 USD");
+        assert_eq!(b.as_string(), "250 USD");
+    }
+
+    #[test]
+    fn add_zero() {
+        let a = Money::new(500, usd());
+        let z = Money::new(0, usd());
+        assert_eq!(a.add(&z).unwrap(), a);
+    }
+
+    #[test]
+    fn add_negative() {
+        let a = Money::new(500, usd());
+        let b = Money::new(-200, usd());
+        assert_eq!(a.add(&b).unwrap().as_string(), "300 USD");
+    }
+
+    #[test]
+    fn add_across_currencies_errors() {
+        let a = Money::new(500, usd());
+        let b = Money::new(500, eur());
+        let err = a.add(&b).unwrap_err();
+        match err {
+            MoneyError::CurrencyMismatch { left, right } => {
+                assert_eq!(left, "USD");
+                assert_eq!(right, "EUR");
+            }
+            other => panic!("expected CurrencyMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn add_overflow() {
+        let a = Money::new(i128::MAX, usd());
+        let b = Money::new(1, usd());
+        assert!(matches!(a.add(&b), Err(MoneyError::Overflow)));
+    }
+
+    // --- subtract ------------------------------------------------------------
+
+    #[test]
+    fn subtract_returns_new_money() {
+        let a = Money::new(500, usd());
+        let b = Money::new(250, usd());
+        let diff = a.subtract(&b).unwrap();
+        assert_eq!(diff.as_string(), "250 USD");
+        assert_eq!(a.as_string(), "500 USD");
+        assert_eq!(b.as_string(), "250 USD");
+    }
+
+    #[test]
+    fn subtract_to_negative() {
+        let a = Money::new(250, usd());
+        let b = Money::new(500, usd());
+        assert_eq!(a.subtract(&b).unwrap().as_string(), "-250 USD");
+    }
+
+    #[test]
+    fn subtract_across_currencies_errors() {
+        let a = Money::new(500, usd());
+        let b = Money::new(500, eur());
+        match a.subtract(&b).unwrap_err() {
+            MoneyError::CurrencyMismatch { left, right } => {
+                assert_eq!(left, "USD");
+                assert_eq!(right, "EUR");
+            }
+            other => panic!("expected CurrencyMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn subtract_overflow() {
+        let a = Money::new(i128::MIN, usd());
+        let b = Money::new(1, usd());
+        assert!(matches!(a.subtract(&b), Err(MoneyError::Overflow)));
+    }
+
+    // --- negate --------------------------------------------------------------
+
+    #[test]
+    fn negate_positive() {
+        let a = Money::new(500, usd());
+        assert_eq!(a.negate().unwrap().as_string(), "-500 USD");
+    }
+
+    #[test]
+    fn negate_negative() {
+        let a = Money::new(-500, usd());
+        assert_eq!(a.negate().unwrap().as_string(), "500 USD");
+    }
+
+    #[test]
+    fn negate_zero() {
+        let a = Money::new(0, usd());
+        assert_eq!(a.negate().unwrap().as_string(), "0 USD");
+    }
+
+    #[test]
+    fn negate_i128_min_overflows() {
+        let a = Money::new(i128::MIN, usd());
+        assert!(matches!(a.negate(), Err(MoneyError::Overflow)));
+    }
+
+    // --- abs -----------------------------------------------------------------
+
+    #[test]
+    fn abs_positive() {
+        let a = Money::new(500, usd());
+        assert_eq!(a.abs().unwrap().as_string(), "500 USD");
+    }
+
+    #[test]
+    fn abs_negative() {
+        let a = Money::new(-500, usd());
+        assert_eq!(a.abs().unwrap().as_string(), "500 USD");
+    }
+
+    #[test]
+    fn abs_zero() {
+        let a = Money::new(0, usd());
+        assert_eq!(a.abs().unwrap().as_string(), "0 USD");
+    }
+
+    #[test]
+    fn abs_i128_min_overflows() {
+        let a = Money::new(i128::MIN, usd());
+        assert!(matches!(a.abs(), Err(MoneyError::Overflow)));
     }
 }

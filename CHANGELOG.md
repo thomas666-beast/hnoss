@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-09
+
+### Added
+
+- `Money` value object: constructs from an `i128` minor-unit amount plus a
+  `Currency`, or from a `(amount, code)` pair via `Money::from_code`.
+  `amount()`, `currency()`, `as_string()`, `Display`, `Debug`, `PartialEq`,
+  `Eq`, `Hash`. No arithmetic yet.
+- `MoneyError` enum with `InvalidCurrency`, `Overflow`, `CurrencyMismatch`,
+  `NonInteger`, `DivisionByZero`, and `Parse` variants.
+
 ## [0.1.0] - 2026-11-09
 
 ### Added
