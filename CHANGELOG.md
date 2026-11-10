@@ -1,24 +1,31 @@
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-10
+
+### Added
+
+- `ParseOptions` struct with `decimal_mark`, `thousands_separator`, and
+  `group_size` fields. All defaulted.
+- `Money::from_str_with(&str, &Currency, &ParseOptions) -> Result<Money, MoneyError>`
+  — parse a major-unit numeric string given a known currency.
+- `Money::from_str_with_code(&str, impl AsRef<str>, &ParseOptions) -> Result<Money, MoneyError>`
+  — convenience over `from_str_with` accepting a code string.
+- `impl FromStr for Money` — parses `"<amount> <code>"` (e.g. `"5.00 USD"`)
+  using default `ParseOptions`.
+- `tests/parsing.rs` integration test.
+
+### Notes
+
+- Parsing is strict: too many decimal digits is an error, never a silent
+  round. Round-trips with `format()` are lossless.
+- Thousands separators are stripped but not validated for group positions.
+
 ## [0.7.0] - 2026-11-10
 
 ### Added
 
-- `FormatOptions` struct with `with_currency`, `currency_separator`,
-  `decimal_mark`, `thousands_separator`, and `group_size` fields. All
-  defaulted.
-- `Money::format() -> String` — human-readable rendering using the
-  currency's exponent and default options. Cannot fail.
-- `Money::format_with(&FormatOptions) -> Result<String, MoneyError>` —
-  custom-option rendering. Fails on `group_size == 0`.
-- `tests/formatting.rs` integration test.
-
-### Notes
-
-- `format` respects the currency's exponent: USD renders `"5.00"`, JPY
-  renders `"500"`, BHD renders `"0.500"`, BTC renders `"0.00000500"`.
-- `Display` still yields `as_string()`, not `format()`. `as_string` is the
-  canonical, round-trippable form.
+- `FormatOptions`, `Money::format`, `Money::format_with`.
+- `tests/formatting.rs`.
 
 ## [0.6.0] - 2026-11-10
 
