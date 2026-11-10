@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-10
+
+### Added
+
+- `Money::add`, `Money::subtract` — same-currency addition and subtraction.
+  Both return `Result<Money, MoneyError>`, failing on currency mismatch
+  (`MoneyError::CurrencyMismatch`) or `i128` overflow (`MoneyError::Overflow`).
+- `Money::negate`, `Money::abs` — sign flip and absolute value. Both return
+  `Result<Money, MoneyError>`, failing only on `i128::MIN`, whose negation
+  and absolute value do not fit in `i128`.
+- `tests/arithmetic.rs` integration test
+
 ## [0.2.0] - 2026-11-09
 
 ### Added
@@ -34,5 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `knows()`, `fallback()`, `all_codes()`.
 - `CurrencyError` enum for construction errors.
 
-[Unreleased]: https://github.com/thomas666-beast/hnoss/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/thomas666-beast/hnoss/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/thomas666-beast/hnoss/releases/tag/v0.3.0
+[0.2.0]: https://github.com/thomas666-beast/hnoss/releases/tag/v0.2.0
 [0.1.0]: https://github.com/thomas666-beast/hnoss/releases/tag/v0.1.0
